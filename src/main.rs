@@ -1,4 +1,3 @@
-//! On the stm32 discovery board this is the "south" led
 //! Target board: STM32F3DISCOVERY
 
 #![no_main]
@@ -8,7 +7,6 @@ use lsm303agr;
 use micromath::F32Ext;
 use panic_halt as _;
 
-use hal::gpio::{Output, PXx, PushPull};
 use stm32f3xx_hal as hal;
 
 use cortex_m_rt::entry;
@@ -16,12 +14,19 @@ use cortex_m_semihosting::hprintln;
 use hal::pac;
 use hal::prelude::*;
 
-// fn blink_led(led: &mut PXx<Output<PushPull>>) {
-//     led.set_high().ok();
-//     cortex_m::asm::delay(100_000);
-//     led.set_low().ok();
-//     cortex_m::asm::delay(100_000);
-// }
+// use macro to init compass leds
+macro_rules! init_leds {
+    ($gpio:expr, [$($pin:ident),*]) => {
+        [
+            $(
+                $gpio.$pin
+                    .into_push_pull_output(&mut $gpio.moder, &mut $gpio.otyper)
+                    .downgrade()
+                    .downgrade()
+            ),*
+        ]
+    };
+}
 
 fn calc_heading_in_rad(mx_data: i16, my_data: i16) -> f32 {
     let mx = mx_data as f32;
@@ -38,7 +43,7 @@ fn calc_heading_in_rad(mx_data: i16, my_data: i16) -> f32 {
 #[entry]
 fn main() -> ! {
     let dp = pac::Peripherals::take().expect("Failed to take peripherals");
-    let cp = pac::CorePeripherals::take().unwrap(); // Need core peripherals for SYST
+    let cp = pac::CorePeripherals::take().expect("Failed to take core peripherals");
 
     let mut rcc = dp.RCC.constrain();
     let mut flash = dp.FLASH.constrain();
@@ -50,6 +55,7 @@ fn main() -> ! {
     let mut gpioe = dp.GPIOE.split(&mut rcc.ahb);
     let mut exti = dp.EXTI;
 
+    // init sensor
     let mut scl =
         gpiob
             .pb6
@@ -72,12 +78,9 @@ fn main() -> ! {
     );
 
     let mut sensor = lsm303agr::Lsm303agr::new_with_i2c(i2c);
-
-    let id = sensor.magnetometer_id().unwrap();
-    hprintln!("{:#02x?}", id);
-
     sensor.init().expect("Failed to initialize the AGR sensor");
 
+    // configure sensor
     sensor
         .set_mag_mode_and_odr(
             &mut delay,
@@ -91,54 +94,15 @@ fn main() -> ! {
     };
     sensor.mag_enable_low_pass_filter().unwrap();
 
+    // init button
     let mut btn_0 = gpioa
         .pa0
         .into_pull_down_input(&mut gpioa.moder, &mut gpioa.pupdr);
 
     btn_0.trigger_on_edge(&mut exti, hal::gpio::Edge::Rising);
 
-    let led_n = gpioe
-        .pe9
-        .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-
-    let led_ne = gpioe
-        .pe10
-        .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-
-    let led_e = gpioe
-        .pe11
-        .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-
-    let led_se = gpioe
-        .pe12
-        .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-
-    let led_s = gpioe
-        .pe13
-        .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-
-    let led_sw = gpioe
-        .pe14
-        .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-
-    let led_w = gpioe
-        .pe15
-        .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-
-    let led_nw = gpioe
-        .pe8
-        .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
-
-    let mut led_array: [PXx<Output<PushPull>>; 8] = [
-        led_n.downgrade().downgrade(),
-        led_ne.downgrade().downgrade(),
-        led_e.downgrade().downgrade(),
-        led_se.downgrade().downgrade(),
-        led_s.downgrade().downgrade(),
-        led_sw.downgrade().downgrade(),
-        led_w.downgrade().downgrade(),
-        led_nw.downgrade().downgrade(),
-    ];
+    // init leds
+    let mut led_array = init_leds!(gpioe, [pe9, pe10, pe11, pe12, pe13, pe14, pe15, pe8]);
 
     let mut last_degrees_uncal = 0.0;
     let mut true_north_degrees = 0.0;
@@ -154,12 +118,12 @@ fn main() -> ! {
 
             let heading_rad = calc_heading_in_rad(mag_data.0, mag_data.1);
 
-            //rad to degrees and add offset to calibrate
+            // rad to degrees and add offset to calibrate
             let degrees_uncal = heading_rad * (180.0 / core::f32::consts::PI);
             last_degrees_uncal = degrees_uncal;
             let mut degrees = degrees_uncal - true_north_degrees;
 
-            //clamp the overflow
+            // clamp the overflow
             if degrees < 0.0 {
                 degrees += 360.0;
             }
@@ -169,7 +133,7 @@ fn main() -> ! {
 
             hprintln!("degrees = {}°", degrees);
 
-            // 3. Map to LED (45 degrees per LED)
+            // map to LED (45 degrees per LED)
             let led_index = (((degrees + 22.5) % 360.0) / 45.0) as usize;
 
             for led in led_array.iter_mut() {
@@ -178,6 +142,7 @@ fn main() -> ! {
             led_array[led_index % 8].set_high().ok();
         }
 
+        // button to calibrate
         if btn_0.is_high().unwrap() {
             hprintln!("Calibration: offset is now = {}°", last_degrees_uncal);
             true_north_degrees = last_degrees_uncal;
