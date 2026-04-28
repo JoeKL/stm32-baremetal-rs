@@ -1,0 +1,15 @@
+[build]
+target = "thumbv7em-none-eabihf"
+
+[target.thumbv7em-none-eabihf]
+# Move the runner HERE
+runner = "probe-rs run --chip STM32F303VCTx"
+rustflags = [
+  "-C", "link-arg=-Tlink.x",
+]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
