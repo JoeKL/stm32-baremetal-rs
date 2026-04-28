@@ -102,6 +102,17 @@ fn main() -> ! {
     btn_0.trigger_on_edge(&mut exti, hal::gpio::Edge::Rising);
 
     // init leds
+    // LED Compass Mapping (Clockwise)
+    // Index | Pin  | Label | Color  | Direction
+    // -----------------------------------------
+    // [0]   | PE9  | LD3   | Red    | North
+    // [1]   | PE10 | LD5   | Orange | North-East
+    // [2]   | PE11 | LD7   | Green  | East
+    // [3]   | PE12 | LD9   | Blue   | South-East
+    // [4]   | PE13 | LD10  | Red    | South
+    // [5]   | PE14 | LD8   | Orange | South-West
+    // [6]   | PE15 | LD6   | Green  | West
+    // [7]   | PE8  | LD4   | Blue   | North-West
     let mut led_array = init_leds!(gpioe, [pe9, pe10, pe11, pe12, pe13, pe14, pe15, pe8]);
 
     let mut last_degrees_uncal = 0.0;
