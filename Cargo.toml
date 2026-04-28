@@ -3,6 +3,9 @@ name = "stm32_baremetal"
 version = "0.1.0"
 edition = "2024"
 
+[build-dependencies]
+cc = "1.0"
+
 [dependencies.stm32f3xx-hal]
 version = "^0"
 features = ["rt","stm32f303xc"]

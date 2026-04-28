@@ -1,11 +1,11 @@
 //! Target board: STM32F3DISCOVERY
 
-#![no_main]
 #![no_std]
+#![no_main]
 
 use lsm303agr;
-use micromath::F32Ext;
 use panic_halt as _;
+use stm32_baremetal::ffi::wrapper;
 
 use stm32f3xx_hal as hal;
 
@@ -26,18 +26,6 @@ macro_rules! init_leds {
             ),*
         ]
     };
-}
-
-fn calc_heading_in_rad(mx_data: i16, my_data: i16) -> f32 {
-    let mx = mx_data as f32;
-    let my = my_data as f32;
-
-    let mx_c = mx - 113.0;
-    let my_c = my - (-263.0);
-
-    let heading_rad = my_c.atan2(mx_c);
-
-    heading_rad
 }
 
 #[entry]
@@ -127,7 +115,7 @@ fn main() -> ! {
         if mag_ready {
             let mag_data = sensor.magnetic_field().unwrap().xyz_unscaled();
 
-            let heading_rad = calc_heading_in_rad(mag_data.0, mag_data.1);
+            let heading_rad = wrapper::safe_calc_heading_in_rad(mag_data.0, mag_data.1);
 
             // rad to degrees and add offset to calibrate
             let degrees_uncal = heading_rad * (180.0 / core::f32::consts::PI);
