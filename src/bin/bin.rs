@@ -9,11 +9,19 @@
 #![no_std]
 #![no_main]
 
+use core::cell::RefCell;
+use core::sync::atomic::AtomicU32;
+use core::sync::atomic::Ordering;
+
+use cortex_m::interrupt::Mutex;
 use lsm303agr;
 use panic_halt as _;
 use stm32_baremetal::ffi::wrapper;
 
+use hal::interrupt;
 use stm32f3xx_hal as hal;
+use stm32f3xx_hal::gpio::Input;
+use stm32f3xx_hal::gpio::gpioa;
 
 use cortex_m_rt::entry;
 use cortex_m_semihosting::hprintln;
@@ -34,6 +42,12 @@ macro_rules! init_leds {
         ]
     };
 }
+
+static BUTTON: Mutex<RefCell<Option<gpioa::PA0<Input>>>> = Mutex::new(RefCell::new(None));
+
+// Operational State Variables
+static TRUE_NORTH_BITS: AtomicU32 = AtomicU32::new(0);
+static LAST_UNCAL_BITS: AtomicU32 = AtomicU32::new(0);
 
 #[entry]
 fn main() -> ! {
@@ -97,6 +111,15 @@ fn main() -> ! {
         .into_pull_down_input(&mut gpioa.moder, &mut gpioa.pupdr);
 
     btn_0.trigger_on_edge(&mut exti, hal::gpio::Edge::Rising);
+    btn_0.enable_interrupt(&mut exti);
+
+    cortex_m::interrupt::free(|cs| {
+        BUTTON.borrow(cs).replace(Some(btn_0));
+    });
+
+    unsafe {
+        pac::NVIC::unmask(pac::Interrupt::EXTI0);
+    }
 
     // init leds
     // LED Compass Mapping (Clockwise)
@@ -111,10 +134,6 @@ fn main() -> ! {
     // [6]   | PE15 | LD6   | Green  | West
     // [7]   | PE8  | LD4   | Blue   | North-West
     let mut led_array = init_leds!(gpioe, [pe9, pe10, pe11, pe12, pe13, pe14, pe15, pe8]);
-
-    // Operational State Variables
-    let mut last_degrees_uncal = 0.0;
-    let mut true_north_degrees = 0.0;
 
     loop {
         // Poll for new magnetometer data
@@ -132,10 +151,11 @@ fn main() -> ! {
                 Ok(heading_rad) => {
                     // rad to degrees and add offset to calibrate
                     let degrees_uncal = heading_rad * (180.0 / core::f32::consts::PI);
-                    last_degrees_uncal = degrees_uncal;
+                    LAST_UNCAL_BITS.store(degrees_uncal.to_bits(), Ordering::Relaxed);
 
                     // Apply user-defined North calibration offset
-                    let mut degrees = degrees_uncal - true_north_degrees;
+                    let mut degrees =
+                        degrees_uncal - f32::from_bits(TRUE_NORTH_BITS.load(Ordering::Relaxed));
 
                     // Normalize angle to 0.0 <= x < 360.0 range
                     if degrees < 0.0 {
@@ -163,14 +183,26 @@ fn main() -> ! {
                 }
             }
         }
+    }
+}
 
-        // On-the-fly calibration: Pressing the button sets current orientation as 'North'
-        if btn_0.is_high().unwrap() {
+#[interrupt]
+fn EXTI0() {
+    cortex_m::interrupt::free(|cs| {
+        let mut btn_ref = BUTTON.borrow(cs).borrow_mut();
+        if let Some(ref mut btn) = *btn_ref {
+            // CRITICAL: You MUST clear the interrupt pending bit,
+            // otherwise the CPU will jump back here immediately!
+            btn.clear_interrupt();
+
+            let last_degrees_uncal = f32::from_bits(LAST_UNCAL_BITS.load(Ordering::Relaxed));
+
             hprintln!(
                 "Calibration Triggered: New North Offset: {}°",
                 last_degrees_uncal
             );
-            true_north_degrees = last_degrees_uncal;
+
+            TRUE_NORTH_BITS.store(last_degrees_uncal.to_bits(), Ordering::Relaxed);
         }
-    }
+    });
 }
