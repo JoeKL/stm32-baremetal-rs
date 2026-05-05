@@ -126,7 +126,3 @@ For a different board, sensor placement, or magnetic environment, update the C o
 - [probe-rs installation](https://probe.rs/docs/getting-started/installation/)
 - [probe-rs probe setup](https://probe.rs/docs/getting-started/probe-setup/)
 - [stm32f3xx-hal crate](https://crates.io/crates/stm32f3xx-hal)
-
-## License
-
-No license file is currently included in this repository. Add a `LICENSE` file before publishing the project for reuse by others.
