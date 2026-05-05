@@ -10,6 +10,9 @@ rustflags = [
 
 [profile.dev]
 panic = "abort"
+opt-level = 0
+debug = true
+lto = false
 
 [profile.release]
 panic = "abort"
