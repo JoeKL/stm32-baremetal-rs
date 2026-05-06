@@ -13,6 +13,7 @@
 			"servertype": "openocd",
 			"gdbPath": "gdb-multiarch",
 			"device": "STM32F303VC",
+			"svdFile": "${workspaceFolder}/svd/STM32F303.svd",
 			"configFiles": [
 				"interface/stlink.cfg",
 				"target/stm32f3x.cfg"
