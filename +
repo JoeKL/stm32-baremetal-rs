@@ -150,8 +150,8 @@ fn main() -> ! {
     let common_adc = CommonAdc::new(dp.ADC1_2, &clocks, &mut rcc.ahb);
     let mut adc1 = Adc::new(dp.ADC1, config, &clocks, &common_adc);
 
-    let mut vr_x_pin = gpioa.pa1.into_analog(&mut gpioa.moder, &mut gpioa.pupdr); // PA1 -> VRx
-    let mut vr_y_pin = gpioa.pa2.into_analog(&mut gpioa.moder, &mut gpioa.pupdr); // PA2 -> VRy
+    let mut vr_x_pin = gpioa.pa1.into_analog(&mut gpioa.moder, &mut gpioa.pupdr);
+    let mut vr_y_pin = gpioa.pa2.into_analog(&mut gpioa.moder, &mut gpioa.pupdr);
 
     loop {
         let raw_x_value: u16 = adc1.read(&mut vr_x_pin).expect("Messung fehlgeschlagen");
