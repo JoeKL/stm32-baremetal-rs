@@ -73,6 +73,7 @@ fn main() -> ! {
 
     let mut gpioa = dp.GPIOA.split(&mut rcc.ahb);
     let mut gpiob = dp.GPIOB.split(&mut rcc.ahb);
+    let mut gpioc = dp.GPIOC.split(&mut rcc.ahb);
     let mut gpioe = dp.GPIOE.split(&mut rcc.ahb);
     let mut exti = dp.EXTI;
 
@@ -150,8 +151,8 @@ fn main() -> ! {
     let common_adc = CommonAdc::new(dp.ADC1_2, &clocks, &mut rcc.ahb);
     let mut adc1 = Adc::new(dp.ADC1, config, &clocks, &common_adc);
 
-    let mut vr_x_pin = gpioa.pa1.into_analog(&mut gpioa.moder, &mut gpioa.pupdr); // PA1 -> VRx
-    let mut vr_y_pin = gpioa.pa2.into_analog(&mut gpioa.moder, &mut gpioa.pupdr); // PA2 -> VRy
+    let mut vr_x_pin = gpioc.pc2.into_analog(&mut gpioc.moder, &mut gpioc.pupdr); // PC2 -> VRx
+    let mut vr_y_pin = gpioc.pc3.into_analog(&mut gpioc.moder, &mut gpioc.pupdr); // PC3 -> VRy
 
     loop {
         let raw_x_value: u16 = adc1.read(&mut vr_x_pin).expect("Messung fehlgeschlagen");
@@ -164,6 +165,7 @@ fn main() -> ! {
         let threshold_range = -threshold..threshold;
 
         if !threshold_range.contains(&norm_x_value) || !threshold_range.contains(&norm_y_value) {
+            hprintln!("Clean X: {}, Clean Y: {}", norm_x_value, norm_y_value);
             // Perform heading calculation via Safety-Wrapped C library
             // This handles Hard-Iron offsets and avoids undefined behavior (NaN/Inf)
             match wrapper::wrapper::safe_calc_heading_in_rad(norm_x_value, norm_y_value) {
