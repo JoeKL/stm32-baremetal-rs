@@ -53,85 +53,21 @@ macro_rules! init_led {
     };
 }
 
-static BUTTON: Mutex<RefCell<Option<gpioa::PA0<Input>>>> = Mutex::new(RefCell::new(None));
-
 // Operational State Variables
 static TRUE_NORTH_BITS: AtomicU32 = AtomicU32::new(0);
 static LAST_UNCAL_BITS: AtomicU32 = AtomicU32::new(0);
 
 #[entry]
 fn main() -> ! {
-    // Hardware Abstraction Layer (HAL) setup
     let dp = pac::Peripherals::take().expect("Critical: Peripheral access failed");
-    let cp = pac::CorePeripherals::take().expect("Critical: Core peripheral access failed");
 
     let mut rcc = dp.RCC.constrain();
     let mut flash = dp.FLASH.constrain();
     let clocks = rcc.cfgr.freeze(&mut flash.acr);
-    let mut delay = hal::delay::Delay::new(cp.SYST, clocks);
     let config = Config::default();
 
-    let mut gpioa = dp.GPIOA.split(&mut rcc.ahb);
-    let mut gpiob = dp.GPIOB.split(&mut rcc.ahb);
     let mut gpioc = dp.GPIOC.split(&mut rcc.ahb);
     let mut gpioe = dp.GPIOE.split(&mut rcc.ahb);
-    let mut exti = dp.EXTI;
-
-    // --- Sensor Initialization (I2C1) ---
-    let mut scl =
-        gpiob
-            .pb6
-            .into_af_open_drain(&mut gpiob.moder, &mut gpiob.otyper, &mut gpiob.afrl);
-
-    let mut sda =
-        gpiob
-            .pb7
-            .into_af_open_drain(&mut gpiob.moder, &mut gpiob.otyper, &mut gpiob.afrl);
-
-    scl.internal_pull_up(&mut gpiob.pupdr, true);
-    sda.internal_pull_up(&mut gpiob.pupdr, true);
-
-    let i2c = hal::i2c::I2c::new(
-        dp.I2C1,
-        (scl, sda),
-        100.kHz().try_into().unwrap(),
-        clocks,
-        &mut rcc.apb1,
-    );
-
-    let mut sensor = lsm303agr::Lsm303agr::new_with_i2c(i2c);
-    sensor.init().expect("Sensor Init Failed: Check I2C wiring");
-
-    // --- Magnetometer Configuration ---
-    // High Resolution mode ensures 16-bit precision for safety-critical navigation
-    sensor
-        .set_mag_mode_and_odr(
-            &mut delay,
-            lsm303agr::MagMode::HighResolution,
-            lsm303agr::MagOutputDataRate::Hz10,
-        )
-        .unwrap();
-
-    let Ok(mut sensor) = sensor.into_mag_continuous() else {
-        panic!("Driver Error: Could not enter continuous sampling mode")
-    };
-    sensor.mag_enable_low_pass_filter().unwrap();
-
-    // User Interface: PA0 Blue Button for field calibration
-    let mut btn_0 = gpioa
-        .pa0
-        .into_pull_down_input(&mut gpioa.moder, &mut gpioa.pupdr);
-
-    btn_0.trigger_on_edge(&mut exti, hal::gpio::Edge::Rising);
-    btn_0.enable_interrupt(&mut exti);
-
-    cortex_m::interrupt::free(|cs| {
-        BUTTON.borrow(cs).replace(Some(btn_0));
-    });
-
-    unsafe {
-        pac::NVIC::unmask(pac::Interrupt::EXTI0);
-    }
 
     // init leds
     // LED Compass Mapping (Clockwise)
@@ -165,7 +101,6 @@ fn main() -> ! {
         let threshold_range = -threshold..threshold;
 
         if !threshold_range.contains(&norm_x_value) || !threshold_range.contains(&norm_y_value) {
-            hprintln!("Clean X: {}, Clean Y: {}", norm_x_value, norm_y_value);
             // Perform heading calculation via Safety-Wrapped C library
             // This handles Hard-Iron offsets and avoids undefined behavior (NaN/Inf)
             match wrapper::wrapper::safe_calc_heading_in_rad(norm_x_value, norm_y_value) {
@@ -208,25 +143,4 @@ fn main() -> ! {
             }
         }
     }
-}
-
-#[interrupt]
-fn EXTI0() {
-    cortex_m::interrupt::free(|cs| {
-        let mut btn_ref = BUTTON.borrow(cs).borrow_mut();
-        if let Some(ref mut btn) = *btn_ref {
-            // CRITICAL: You MUST clear the interrupt pending bit,
-            // otherwise the CPU will jump back here immediately!
-            btn.clear_interrupt();
-
-            let last_degrees_uncal = f32::from_bits(LAST_UNCAL_BITS.load(Ordering::Relaxed));
-
-            hprintln!(
-                "Calibration Triggered: New North Offset: {}°",
-                last_degrees_uncal
-            );
-
-            TRUE_NORTH_BITS.store(last_degrees_uncal.to_bits(), Ordering::Relaxed);
-        }
-    });
 }
